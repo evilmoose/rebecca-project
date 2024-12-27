@@ -3,7 +3,6 @@ import json
 from dotenv import load_dotenv
 import psycopg
 from psycopg.rows import dict_row
-from utils.embeddings_utils import embed_text_with_ollama
 
 # Load environment variables
 load_dotenv()
@@ -116,30 +115,5 @@ def update_conversation(conversation_id, response=None, metadata=None):
                 (response, json.dumps(metadata) if metadata else None, conversation_id)
             )
         conn.commit()
-    finally:
-        conn.close()
-
-def search_ltm(user_id, query_text, limit=5):
-    embedding = embed_text_with_ollama(query_text)
-    query = """
-    SELECT prompt, response, metadata, embedding <=> %s::vector AS similarity
-    FROM conversations
-    WHERE user_id = %s
-    ORDER BY similarity ASC
-    LIMIT %s
-    """
-    return fetch_all(query, (embedding, user_id, limit))
-
-def save_to_ltm(user_id, text, metadata):
-    embedding = embed_text_with_ollama(text)
-    query = """
-    INSERT INTO conversations (user_id, prompt, embedding, metadata)
-    VALUES (%s, %s, %s, %s)
-    """
-    conn = connect_db()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(query, (user_id, text, embedding, json.dumps(metadata)))
-            conn.commit()
     finally:
         conn.close()
