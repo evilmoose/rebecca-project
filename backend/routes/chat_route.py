@@ -2,6 +2,8 @@ from fastapi import APIRouter, Request, HTTPException
 from routes.tts_route import tts_router
 from starlette.responses import StreamingResponse
 from utils.db_utils import store_conversations
+from utils.memory_utils import initialize_stm_from_redis, save_stm_to_redis
+from utils.scoring_utils import combine_and_prioritize_memories
 from ollama import chat
 from utils.db_utils import fetch_one
 import jwt
@@ -69,7 +71,6 @@ async def chat_route(request: Request):
         
         # Fetch user_id from username
         user_id = get_user_id_from_username(username)
-
         if not user_id:
             raise HTTPException(status_code=404, detail="User not found")
             
@@ -77,15 +78,20 @@ async def chat_route(request: Request):
         data = await request.json()
         model = 'llama3.2:latest'
         user_input = data.get('user_input', '')
-
         if not user_input.strip():
             raise HTTPException(status_code=400, detail="User input is missing or empty")
+        
+        # Initialize STM from Redis
+        short_term_memory = initialize_stm_from_redis(user_id)
 
-        # Combine context with user input
-        messages = [
-            {'role': 'system', 'content': REBECCA_PERSONA_PROMPT},
-            {'role': 'user', 'content': user_input},
-        ]
+        #Combine STM and LTM and prioritize memories
+        short_term_memory = combine_and_prioritize_memories(user_id, user_input, short_term_memory )
+
+        # Prepare context for Ollama model
+        chat_history = short_term_memory.loaad_memory_variable({})["chat_hitory"]
+        messages = [{'role': 'system', 'content': REBECCA_PERSONA_PROMPT}]
+        messages += [{'role': message["role"], 'content': message["content"]} for message in chat_history]
+        messages.append({'role': 'user', 'content': user_input})
 
         # Debugging logs
         print(f"DEBUG: Received user input...")
@@ -93,17 +99,20 @@ async def chat_route(request: Request):
         print(f"DEBUG: User ID... {user_id}")
 
         # Generator function for streaming responses
-        async def generate_response_stream():
-            full_response = "" # To accumulate the full response
-            response_stream = chat(model, messages=messages, stream=True)
+        full_response = "" # To accumulate the full response
+        response_stream = chat(model, messages=messages, stream=True)
 
+        async def generate_response_stream():
+            nonlocal full_response
             buffer = ""
+
             for chunk in response_stream:
                 print(f"DEBUG: Chunk received...")
                 message = chunk.get("message", {}).get("content", "")
                 buffer += message
                 full_response += message  # Accumulate the full response
-
+                
+                # Stream sentences as they complete
                 while '.' in buffer:
                     sentence, buffer = buffer.split('.', 1)
                     yield f"{sentence.strip()}.\n\n"
@@ -115,9 +124,10 @@ async def chat_route(request: Request):
             # Debug log for full response
             print(f"DEBUG: Full response...\n\n {full_response}")
             
-            # Store the conversation
-            store_conversations(int(user_id), user_input, full_response)
-            print("DEBUG: Conversation stored successfully...")
+        # Save conversation in STM and optionally in LTM
+        save_stm_to_redis(user_id, short_term_memory)
+        store_conversations(user_id, user_input, full_response)
+        print("DEBUG: Conversation stored successfully...")
         
         # Return a stream of responses      
         return StreamingResponse(generate_response_stream(), media_type='text/event-stream')
