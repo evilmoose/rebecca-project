@@ -1,0 +1,67 @@
+.sidebar {
+  width: 15%;
+  flex-shrink: 0;
+}
+
+.main-panel {
+  width: 85%;
+  flex-grow: 1;
+}
+
+.split-container {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+}
+
+.split-container > div {
+  flex: 1;
+}
+.markdown {
+  font-family: var(--bs-body-font-family);
+  line-height: var(--bs-body-line-height);
+  color: var(--bs-body-color);
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.markdown p {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+.markdown pre,
+.markdown code {
+  font-family: var(--bs-font-monospace);
+  font-size: 0.875em;
+  background-color: var(--bs-secondary-bg);
+  padding: 0.25rem;
+  border-radius: var(--bs-border-radius);
+}
+
+.markdown ul {
+  padding-left: 2rem;
+}
+
+.markdown ol {
+  padding-left: 2rem;
+}
+
+.markdown blockquote {
+  padding: 0.5rem 1rem;
+  margin: 0 0 1rem;
+  border-left: 0.25rem solid var(--bs-secondary-color);
+  background-color: var(--bs-tertiary-bg);
+}
+
+
