@@ -117,3 +117,10 @@ def update_conversation(conversation_id, response=None, metadata=None):
         conn.commit()
     finally:
         conn.close()
+
+def get_user_id_from_username(username):
+    query = "SELECT id FROM users WHERE username = %s"
+    params = (username,)
+    result = fetch_one(query, params)
+    print(f"DEBUG: Result from fetch_one... {result}")
+    return result['id'] if result else None

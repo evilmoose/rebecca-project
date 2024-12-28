@@ -1,26 +1,16 @@
 from fastapi import APIRouter, Request, HTTPException
 from routes.tts_route import tts_router
 from starlette.responses import StreamingResponse
-from utils.db_utils import store_conversations
+from utils.db_utils import store_conversations, get_user_id_from_username
+from utils.redis_utils import RedisClient
 from ollama import chat
-from utils.db_utils import fetch_one
 import jwt
 import os
-from contextlib import contextmanager
-import time
 
 chat_router = APIRouter()
 
 # Include the TTS router globally under /tts
 chat_router.include_router(tts_router, prefix="/tts")
-
-# Timer context manager for performance monitoring
-@contextmanager
-def timer(name):
-    start_time = time.time()
-    yield
-    end_time = time.time()
-    print(f"DEBUG: {name} took {end_time - start_time:.2f} seconds")
 
 # Define Rebecca's persona and conversational guidelines
 REBECCA_PERSONA_PROMPT = """
@@ -34,20 +24,14 @@ Guidelines:
 
 Engage in discussions about life, creativity, and ideas while providing companionship and inspiration.
 """
-
-def get_user_id_from_username(username):
-    query = "SELECT id FROM users WHERE username = %s"
-    params = (username,)
-    result = fetch_one(query, params)
-    print(f"DEBUG: Result from fetch_one... {result}")
-    return result['id'] if result else None
+# Initialize Redis client
+redis_client = RedisClient()
 
 @chat_router.post("/chat")
 async def chat_route(request: Request):
     try:
         # Check for Authorization
         auth_header = request.headers.get('Authorization')
-        
         if not auth_header:
             raise HTTPException(
                 status_code=401, 
@@ -69,23 +53,23 @@ async def chat_route(request: Request):
         
         # Fetch user_id from username
         user_id = get_user_id_from_username(username)
-
         if not user_id:
             raise HTTPException(status_code=404, detail="User not found")
             
         # Parse incoming JSON
         data = await request.json()
         model = 'llama3.2:latest'
-        user_input = data.get('user_input', '')
-
+        user_input = data.get('user_input', '').strip()
         if not user_input.strip():
             raise HTTPException(status_code=400, detail="User input is missing or empty")
 
+         # Retrieve and update conversation history using Redis utilities
+        conversation_history = redis_client.get_conversation_history(user_id)
+        
         # Combine context with user input
-        messages = [
-            {'role': 'system', 'content': REBECCA_PERSONA_PROMPT},
-            {'role': 'user', 'content': user_input},
-        ]
+        messages = [{'role': 'system', 'content': REBECCA_PERSONA_PROMPT}] + conversation_history
+
+        messages.append({'role': 'user', 'content': user_input})
 
         # Debugging logs
         print(f"DEBUG: Received user input...")
@@ -94,10 +78,12 @@ async def chat_route(request: Request):
 
         # Generator function for streaming responses
         async def generate_response_stream():
-            full_response = "" # To accumulate the full response
+
             response_stream = chat(model, messages=messages, stream=True)
 
+            full_response = "" # To accumulate the full response
             buffer = ""
+
             for chunk in response_stream:
                 print(f"DEBUG: Chunk received...")
                 message = chunk.get("message", {}).get("content", "")
@@ -114,6 +100,11 @@ async def chat_route(request: Request):
                 
             # Debug log for full response
             print(f"DEBUG: Full response...\n\n {full_response}")
+
+            # Update Redis with the latest user and assistant messages
+            redis_client.add_message_to_history(user_id, {'role': 'user', 'content': user_input})
+            redis_client.add_message_to_history(user_id, {'role': 'assistant', 'content': full_response})
+            redis_client.trim_history(user_id)  # Keep history within the limit
             
             # Store the conversation
             store_conversations(int(user_id), user_input, full_response)

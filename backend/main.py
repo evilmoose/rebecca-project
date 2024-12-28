@@ -1,12 +1,17 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from routes.auth_route import auth_router
 from routes.chat_route import chat_router
 from fastapi.middleware.cors import CORSMiddleware
+import redis
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = FastAPI()
+
+# Initialize Redis client
+redis_client = redis.StrictRedis(host="localhost", port=6379, decode_responses=True)
+
 
 # Configure CORS
 app.add_middleware(
