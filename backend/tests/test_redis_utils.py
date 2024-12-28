@@ -1,4 +1,4 @@
-from utils.redis_utils import RedisClient
+from backend.utils.redis_utils import RedisClient
 
 # Initialize Redis client
 redis_client = RedisClient()

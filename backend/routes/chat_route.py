@@ -3,6 +3,7 @@ from routes.tts_route import tts_router
 from starlette.responses import StreamingResponse
 from utils.db_utils import store_conversations, get_user_id_from_username
 from utils.redis_utils import RedisClient
+from services.scoring import calculate_scores
 from ollama import chat
 import jwt
 import os
@@ -68,7 +69,6 @@ async def chat_route(request: Request):
         
         # Combine context with user input
         messages = [{'role': 'system', 'content': REBECCA_PERSONA_PROMPT}] + conversation_history
-
         messages.append({'role': 'user', 'content': user_input})
 
         # Debugging logs
@@ -101,9 +101,14 @@ async def chat_route(request: Request):
             # Debug log for full response
             print(f"DEBUG: Full response...\n\n {full_response}")
 
+            # Calculate scores
+            context = " ".join([msg["content"] for msg in conversation_history])
+            user_scores = calculate_scores(user_input, context)
+            assistant_scores = calculate_scores(full_response, context)
+
             # Update Redis with the latest user and assistant messages
-            redis_client.add_message_to_history(user_id, {'role': 'user', 'content': user_input})
-            redis_client.add_message_to_history(user_id, {'role': 'assistant', 'content': full_response})
+            redis_client.add_message_to_history(user_id, {**{'role': 'user', 'content': user_input}, **user_scores})
+            redis_client.add_message_to_history(user_id, {**{'role': 'assistant', 'content': full_response}, **assistant_scores})
             redis_client.trim_history(user_id)  # Keep history within the limit
             
             # Store the conversation
