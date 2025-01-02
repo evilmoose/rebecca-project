@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Request, HTTPException
 from routes.tts_route import tts_router
 from starlette.responses import StreamingResponse
-from utils.db_utils import store_conversations, get_user_id_from_username
+from utils.db_utils import store_conversations, get_user_id_from_username, find_similar_conversations
 from utils.redis_utils import RedisClient
 from services.scoring import calculate_scores
-from ollama import chat
+from difflib import SequenceMatcher
+from ollama import chat, embeddings
 import jwt
 import os
 
@@ -58,27 +59,77 @@ async def chat_route(request: Request):
             raise HTTPException(status_code=404, detail="User not found")
             
         # Parse incoming JSON
-        data = await request.json()
+        try:
+            data = await request.json()
+            if not isinstance(data, dict):
+                raise ValueError("Parsed JSON is not a dictionary")
+            print(f"DEBUG: Parsed JSON data... {data}")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+
         model = 'llama3.2:latest'
         user_input = data.get('user_input', '').strip()
-        if not user_input.strip():
-            raise HTTPException(status_code=400, detail="User input is missing or empty")
 
-         # Retrieve and update conversation history using Redis utilities
-        conversation_history = redis_client.get_conversation_history(user_id)
+        # Ensure user_input is a valid string
+        if not isinstance(user_input, str) or not user_input:
+            raise HTTPException(status_code=400, detail="User input is missing or not a valid string")
+
+        # Debugging log for user_input
+        print(f"DEBUG: Extracted user input content: {user_input}")
+
+        # Generate embedding for user input
+        try:
+            user_embedding_response = embeddings(
+                model="nomic-embed-text:latest",
+                prompt=user_input  # Pass the plain string directly
+            )
+            user_embedding = user_embedding_response["embedding"]  # Extract the embedding
+        except Exception as e:
+            print(f"ERROR: Failed to generate embedding: {e}")
+            raise HTTPException(status_code=500, detail="Embedding generation failed")
+
+        # Debugging log for embeddings
+        print(f"DEBUG: Generated embedding for user input: {user_embedding}")
+
+
+        # Retrieve similar conversations
+        similar_conversations = find_similar_conversations(user_embedding)
+
+        conversation_history = [
+            msg for msg in redis_client.get_conversation_history(user_id)
+            if msg.get("role") and msg.get("content")
+        ]
+
+
+        print(f"user_input: {user_input}")
+        print(f"conversation_history: {conversation_history}")
+        print(f"similar_conversations: {similar_conversations}")
+
         
         # Combine context with user input
         messages = [{'role': 'system', 'content': REBECCA_PERSONA_PROMPT}] + conversation_history
         messages.append({'role': 'user', 'content': user_input})
+
+        print(f"DEBUG: Final messages for chat: {messages}")
+
+        # Validate messages
+        for message in messages:
+            if not message.get("role") or not message.get("content"):
+                raise HTTPException(status_code=400, detail="Invalid message format in conversation history")
+
+        # Include similar conversations in context
+        for conv in similar_conversations:
+            messages.append({'role': 'assistant', 'content': conv.get("response", "")})
 
         # Debugging logs
         print(f"DEBUG: Received user input...")
         print(f"DEBUG: Messages prepared for model...")
         print(f"DEBUG: User ID... {user_id}")
 
+
         # Generator function for streaming responses
         async def generate_response_stream():
-
+            """Stream the response while ensuring uniqueness."""
             response_stream = chat(model, messages=messages, stream=True)
 
             full_response = "" # To accumulate the full response
@@ -96,6 +147,7 @@ async def chat_route(request: Request):
 
             if buffer.strip():
                 yield f"{buffer.strip()}\n\n"
+
                 full_response += buffer.strip()
                 
             # Debug log for full response
@@ -107,12 +159,34 @@ async def chat_route(request: Request):
             assistant_scores = calculate_scores(full_response, context)
 
             # Update Redis with the latest user and assistant messages
-            redis_client.add_message_to_history(user_id, {**{'role': 'user', 'content': user_input}, **user_scores})
-            redis_client.add_message_to_history(user_id, {**{'role': 'assistant', 'content': full_response}, **assistant_scores})
+            redis_client.add_message_to_history(
+                user_id,
+                "user", 
+                {**{'content': user_input}, **user_scores}
+            )
+            redis_client.add_message_to_history(
+                user_id,
+                'assistant', 
+                {**{'content': full_response}, **assistant_scores}
+            )
             redis_client.trim_history(user_id)  # Keep history within the limit
             
             # Store the conversation
-            store_conversations(int(user_id), user_input, full_response)
+            store_conversations(
+                user_id=int(user_id),
+                role="user", 
+                prompt=user_input,
+                response=None, 
+                metadata=user_scores
+            )
+            
+            store_conversations(
+                user_id=int(user_id),
+                role="assistant", 
+                prompt=None,
+                response=full_response, 
+                metadata=assistant_scores
+            )
             print("DEBUG: Conversation stored successfully...")
         
         # Return a stream of responses      

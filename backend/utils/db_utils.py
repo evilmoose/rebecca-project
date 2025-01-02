@@ -3,6 +3,7 @@ import json
 from dotenv import load_dotenv
 import psycopg
 from psycopg.rows import dict_row
+from ollama import embeddings
 
 # Load environment variables
 load_dotenv()
@@ -73,20 +74,39 @@ def fetch_user_conversations(user_id, limit=10):
 
 
 # Store a conversation in the database
-def store_conversations(user_id, prompt, response, metadata=None):
+def store_conversations(user_id, role, prompt, response, metadata=None):
+    """
+    Store a conversation in the database and generate embeddings for it.
+    """
     conn = connect_db()
     try:
-        print(f"DEBUG: Attempting to insert - user_id: {user_id}, prompt: {prompt}, response: {response}, metadata: {metadata}")
-        with conn.cursor() as cursor:
-            query = """
-            INSERT INTO conversations (user_id, prompt, response, metadata)
-            VALUES (%s, %s, %s, %s)
-            """
-            cursor.execute(query, (user_id, prompt, response, json.dumps(metadata) if metadata else None))
-            conn.commit()  # Explicitly commit the transaction
-            print("DEBUG: Record inserted successfully")
+        with connect_db() as conn:
+            cursor = conn.cursor()
+
+            # Insert conversation into `conversations` table
+            cursor.execute("""
+                INSERT INTO conversations (user_id, role, prompt, response, metadata)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id;
+            """, (user_id, 'user', prompt, response, '{}'))
+            conversation_id = cursor.fetchone()["id"]
+
+            # Generate embeddings for the prompt and response
+            for role, content in [('user', prompt), ('assistant', response)]:
+                if content:
+                    embedding_response = embeddings("nomic-embed-text:latest", [{"role": role, "content": content}])
+                    embedding = embedding_response[0]["embedding"]
+
+                    # Insert embedding into `conversations_embeddings`
+                    cursor.execute("""
+                        INSERT INTO conversations_embeddings (id, embedding)
+                        VALUES (%s, %s::vector)
+                    """, (conversation_id, embedding))
+
+            conn.commit()
+            print(f"DEBUG: Successfully stored conversation and embeddings for Conversation ID {conversation_id}")
     except Exception as e:
-        print(f"ERROR: Failed to store conversation: {e}")
+        print(f"ERROR: Failed to store conversation or generate embeddings: {e}")
     finally:
         conn.close()
 
@@ -124,3 +144,27 @@ def get_user_id_from_username(username):
     result = fetch_one(query, params)
     print(f"DEBUG: Result from fetch_one... {result}")
     return result['id'] if result else None
+
+def find_similar_conversations(embedding_vector):
+    """
+    Find the most similar conversations to the provided embedding vector.
+    """
+    try:
+        with connect_db() as conn:
+            cursor = conn.cursor()
+
+            # Explicitly cast the embedding_vector to the `vector` type
+            query = """
+                SELECT id, embedding <-> %s::vector AS similarity_score
+                FROM conversations_embeddings
+                ORDER BY similarity_score ASC
+                LIMIT 5;
+            """
+            cursor.execute(query, (embedding_vector,))
+            results = cursor.fetchall()
+
+        print(f"DEBUG: Found similar conversations: {results}")
+        return results
+    except Exception as e:
+        print(f"ERROR: Failed to find similar conversations: {e}")
+        return []
