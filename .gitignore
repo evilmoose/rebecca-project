@@ -25,6 +25,7 @@
 /frontend/*.sln
 /frontend/*.sw?
 /frontend/src/styles.css
+/frontend/public/rebecca
 
 /backend/.venv
 /backend/.env
