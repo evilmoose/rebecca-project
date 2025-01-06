@@ -17,8 +17,8 @@ const rebecca_textures = [
     '/rebecca/blink/rebecca_full_blink_frame_0004.png',
     // 0005 idle, half_blink, full_blink
     '/rebecca/idle/rebecca_neutral_frame_0005.png',
-    '/rebecca/blink/rebecca_half_blink_frame_0006.png',
-    '/rebecca/blink/rebecca_full_blink_frame_0007.png',
+    '/rebecca/blink/rebecca_half_blink_frame_0005.png',
+    '/rebecca/blink/rebecca_full_blink_frame_0005.png',
     // 0006 idle, half_blink, full_blink
     '/rebecca/idle/rebecca_neutral_frame_0006.png',
     '/rebecca/blink/rebecca_half_blink_frame_0006.png',

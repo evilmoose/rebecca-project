@@ -15,6 +15,11 @@ const PixijsContainer = () => {
         // Sprite reference for resizing and scaling
         let rebecca;
 
+        let elapsed = 0; // Accumulated time in milliseconds
+        let currentFrameIndex = 0; // Index for idle frames
+        let blinkFrameIndex = 0; // Index for blink frames
+        let isBlinking = false; // State to track blinking
+
         if (!appRef.current) {
             // Create a new PixiJS Application
             const app = new Application();
@@ -33,29 +38,20 @@ const PixijsContainer = () => {
                 if (containerRef.current) {
                     containerRef.current.appendChild(app.canvas);
                 }
-                
-                // Load am array of textures.
-                const texturePaths = rebecca_textures;
 
                 // Load assets and map them into an array of textures
-                const loadedAssets = await Assets.load(texturePaths);
-                textures = texturePaths.map((path) => loadedAssets[path]);
+                const loadedAssets = await Assets.load(rebecca_textures);
+                textures = rebecca_textures.map((path) => loadedAssets[path]);
 
                 // Create a sprite and set the first texture
-                let currentFrameIndex = 0;
-                rebecca = new Sprite(textures[currentFrameIndex]);          
+                rebecca = new Sprite(textures[currentFrameIndex]);           
 
                 // Center the sprite's anchor point
                 rebecca.anchor.set(0.5);
 
-                // Move the sprite to the center of the screen
-                //rebecca.x = app.screen.width / 2;
-                //rebecca.y = app.screen.height / 2;
-
                 // Add to stage
                 app.stage.addChild(rebecca);
 
-                let elapsed = 0; // Accumulated time in milliseconds
                 let desiredFPS = 16; // Set your desired FPS here (e.g., 8 or 30)
                 let frameInterval = 1000 / desiredFPS; // Time in ms between frames
 
@@ -66,8 +62,25 @@ const PixijsContainer = () => {
                     // Check if enough time has passed to update the frame
                     if (elapsed >= frameInterval) {
                         elapsed = 0; // Reset the elapsed time
-                        currentFrameIndex = (currentFrameIndex + 1) % textures.length; // Update the frame index
-                        rebecca.texture = textures[currentFrameIndex]; // Change the sprite texture
+                        if (isBlinking) {
+                            // Handle blinking frames
+                            blinkFrameIndex++;
+                            if (blinkFrameIndex >= 3) {
+                                isBlinking = false;
+                                blinkFrameIndex = 0;
+                                currentFrameIndex = (currentFrameIndex + 3) % textures.length;
+                            }
+                            rebecca.texture = textures[currentFrameIndex + blinkFrameIndex];
+                        } else {
+                            // Handle idle animation
+                            currentFrameIndex = (currentFrameIndex + 3) % textures.length;
+                            rebecca.texture = textures[currentFrameIndex];
+                            // Randomly trigger blinking
+                            if (Math.random() < 0.02) { // 2% chance per frame
+                                isBlinking = true;
+                                blinkFrameIndex = 0;
+                            }
+                        }
                     }
                 });
                 // Handle resizing
@@ -137,7 +150,7 @@ const PixijsContainer = () => {
         ref={containerRef}>
 
         </div>
-    )
+    );
 };
 
 export default PixijsContainer;
