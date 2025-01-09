@@ -21,6 +21,7 @@ DB_PARAMS = {
 def connect_db():
     try:
         conn = psycopg.connect(**DB_PARAMS, row_factory=dict_row)
+        print(f"DEBUG: Connected to database... {conn}")
         return conn
     except psycopg.OperationalError as e:
         print(f"Database connection error: {e}")
@@ -74,7 +75,7 @@ def fetch_user_conversations(user_id, limit=10):
 
 
 # Store a conversation in the database
-def store_conversations(user_id, role, prompt, response, metadata=None):
+def store_conversations(user_id, role, prompt=None, response=None, metadata=None):
     """
     Store a conversation in the database and generate embeddings for it.
     """
@@ -83,25 +84,36 @@ def store_conversations(user_id, role, prompt, response, metadata=None):
         with connect_db() as conn:
             cursor = conn.cursor()
 
+            # Default to empty JSON for metadata
+            metadata = json.dumps(metadata or '{}')
+
             # Insert conversation into `conversations` table
             cursor.execute("""
                 INSERT INTO conversations (user_id, role, prompt, response, metadata)
                 VALUES (%s, %s, %s, %s, %s)
                 RETURNING id;
-            """, (user_id, 'user', prompt, response, '{}'))
+            """, (user_id, role, prompt, response, metadata))
             conversation_id = cursor.fetchone()["id"]
 
             # Generate embeddings for the prompt and response
             for role, content in [('user', prompt), ('assistant', response)]:
                 if content:
-                    embedding_response = embeddings("nomic-embed-text:latest", [{"role": role, "content": content}])
-                    embedding = embedding_response[0]["embedding"]
+                    try:
+                        print(f"DEBUG: Generating embedding for role '{role}' with content: {content}")
+                        embedding_response = embeddings("nomic-embed-text:latest", content)
 
-                    # Insert embedding into `conversations_embeddings`
-                    cursor.execute("""
-                        INSERT INTO conversations_embeddings (id, embedding)
-                        VALUES (%s, %s::vector)
-                    """, (conversation_id, embedding))
+                        # Access the embedding directly
+                        embedding = embedding_response.embedding  # Assuming the attribute is `embedding`
+                        print(f"DEBUG: Retrieved embedding: {embedding[:10]}...")  # Print the first 10 values for debugging
+
+                        # Insert embedding into the database
+                        cursor.execute("""
+                            INSERT INTO conversations_embeddings (id, embedding)
+                            VALUES (%s, %s::vector)
+                        """, (conversation_id, embedding))
+                    except Exception as e:
+                        print(f"ERROR: Embedding generation failed for role '{role}' with content '{content}': {e}")
+                        continue
 
             conn.commit()
             print(f"DEBUG: Successfully stored conversation and embeddings for Conversation ID {conversation_id}")
@@ -163,7 +175,7 @@ def find_similar_conversations(embedding_vector):
             cursor.execute(query, (embedding_vector,))
             results = cursor.fetchall()
 
-        print(f"DEBUG: Found similar conversations: {results}")
+        print(f"DEBUG: Found similar conversations: \n{results}")
         return results
     except Exception as e:
         print(f"ERROR: Failed to find similar conversations: {e}")

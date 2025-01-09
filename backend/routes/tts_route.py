@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from starlette.responses import StreamingResponse
@@ -40,24 +41,17 @@ async def text_to_speech(request: Request):
         polly_client = boto3.client("polly", region_name="us-east-1")
         
         # Request speech synthesis in PCM format
-        response = polly_client.synthesize_speech(
+        audio_response = polly_client.synthesize_speech(
             Text=text,
             OutputFormat="pcm",  # Raw PCM format
-            SpeechMarktypes=["viseme"], # Request viseme data
             VoiceId="Joanna",
             SampleRate="16000"  # High-quality audio
         )
-
-        # Retrieve the viseme data
-        viseme_data = None
-        if "SpeechMarks" in response:
-            with closing (response["SpeechMarks"]) as viseme_stream:
-                viseme_data = viseme_stream.read().decode("utf-8")
         
         # Stream the audio response
-        if "AudioStream" in response:
+        if "AudioStream" in audio_response:
             def wav_audio_stream():
-                with closing(response["AudioStream"]) as audio_stream:
+                with closing(audio_response["AudioStream"]) as audio_stream:
                     # Read the PCM data
                     pcm_data = audio_stream.read()
                     # Generate WAV header
@@ -65,13 +59,12 @@ async def text_to_speech(request: Request):
                     # Yield WAV header followed by PCM data
                     yield wav_header + pcm_data
 
-            return {
-                "audio_stream": StreamingResponse(
-                    wav_audio_stream(),
-                    media_type="audio/wav"  # Correct MIME type for WAV audio
-                ),
-                "viseme_data": viseme_data # Include viseme data in the response
-            }
+            # Return a combined response
+            return StreamingResponse(
+                wav_audio_stream(),
+                media_type="audio/wav"
+            )
+        
         else:
             raise HTTPException(status_code=500, detail="Audio stream not found")
     except (BotoCoreError, ClientError) as error:

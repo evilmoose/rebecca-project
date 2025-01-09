@@ -17,7 +17,7 @@ class RedisClient:
         """Retrieve the conversation history for a user."""
         conversation_key = f"chat_history:{user_id}"
         messages = self.redis_client.lrange(conversation_key, -max_messages, -1)
-        print(f"DEBUG: Retrieved conversation history for user {user_id}: {messages}")
+        print(f"** DEBUG **: Retrieved conversation history for user {user_id}... \n{messages}")
         # Deserialize and ensure role is included
         return [
             {
@@ -34,8 +34,9 @@ class RedisClient:
             "role": role,
             "content": message  # Use 'message' here, as it matches the parameter name
         }
-        self.redis_client.rpush(conversation_key, json.dumps(message))
-        print(f"DEBUG: Added message to history for user {user_id}: {msg_data}")
+        if message:  # Skip empty messages
+            self.redis_client.rpush(conversation_key, json.dumps(message))
+            print(f"DEBUG: Added message to history for user {user_id}: {msg_data}")
 
     def trim_history(self, user_id, max_messages=10):
         """Trim the conversation history to the last `max_messages` messages."""
@@ -58,8 +59,9 @@ class RedisClient:
             self.add_message_to_history(user_id, {"role": role, "content": content})
 
             # Fetch embedding from PostgreSQL
-            embedding_response = embeddings("nomic-embed-text:latest", [{"role": role, "content": content}])
-            embedding = embedding_response[0]["embedding"]
+            if content:  # Only generate embeddings if content is not empty
+                embedding_response = embeddings("nomic-embed-text:latest", [{"role": role, "content": content}])
+                embedding = embedding_response[0]["embedding"]
 
             # Store the embedding in PostgreSQL
             with connect_db() as conn:

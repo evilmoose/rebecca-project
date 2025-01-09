@@ -52,7 +52,7 @@ const PixijsContainer = () => {
                 // Add to stage
                 app.stage.addChild(rebecca);
 
-                let desiredFPS = 16; // Set your desired FPS here (e.g., 8 or 30)
+                let desiredFPS = 8; // Set your desired FPS here (e.g., 8 or 30)
                 let frameInterval = 1000 / desiredFPS; // Time in ms between frames
 
                 app.ticker.add((/*delta*/) => {

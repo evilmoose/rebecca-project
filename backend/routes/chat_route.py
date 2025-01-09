@@ -75,7 +75,7 @@ async def chat_route(request: Request):
             raise HTTPException(status_code=400, detail="User input is missing or not a valid string")
 
         # Debugging log for user_input
-        print(f"DEBUG: Extracted user input content: {user_input}")
+        print(f"DEBUG: Extracted user input content... {user_input}\n")
 
         # Generate embedding for user input
         try:
@@ -89,7 +89,8 @@ async def chat_route(request: Request):
             raise HTTPException(status_code=500, detail="Embedding generation failed")
 
         # Debugging log for embeddings
-        print(f"DEBUG: Generated embedding for user input: {user_embedding}")
+        # print(f"DEBUG: Generated embedding for user input... {user_embedding}")
+        print(f"** DEBUG **: Generated embedding for user input...")
 
 
         # Retrieve similar conversations
@@ -101,16 +102,16 @@ async def chat_route(request: Request):
         ]
 
 
-        print(f"user_input: {user_input}")
-        print(f"conversation_history: {conversation_history}")
-        print(f"similar_conversations: {similar_conversations}")
+        print(f"DEBUG: user_input... {user_input}")
+        print(f"DEBUG: conversation_history... {conversation_history}")
+        print(f"DEBUG: similar_conversations... {similar_conversations}")
 
         
         # Combine context with user input
         messages = [{'role': 'system', 'content': REBECCA_PERSONA_PROMPT}] + conversation_history
         messages.append({'role': 'user', 'content': user_input})
 
-        print(f"DEBUG: Final messages for chat: {messages}")
+        print(f"DEBUG: Final messages for chat:\n {messages}")
 
         # Validate messages
         for message in messages:
@@ -122,8 +123,8 @@ async def chat_route(request: Request):
             messages.append({'role': 'assistant', 'content': conv.get("response", "")})
 
         # Debugging logs
-        print(f"DEBUG: Received user input...")
-        print(f"DEBUG: Messages prepared for model...")
+        # print(f"DEBUG: Received user input...")
+        # print(f"DEBUG: Messages prepared for model...")
         print(f"DEBUG: User ID... {user_id}")
 
 
@@ -136,7 +137,7 @@ async def chat_route(request: Request):
             buffer = ""
 
             for chunk in response_stream:
-                print(f"DEBUG: Chunk received...")
+                # print(f"DEBUG: Chunk received...")
                 message = chunk.get("message", {}).get("content", "")
                 buffer += message
                 full_response += message  # Accumulate the full response
