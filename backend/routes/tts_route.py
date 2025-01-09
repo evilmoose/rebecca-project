@@ -70,3 +70,27 @@ async def text_to_speech(request: Request):
     except (BotoCoreError, ClientError) as error:
         print(f"Polly error: {error}")
         raise HTTPException(status_code=500, detail="Error with AWS Polly TTS service")
+    
+@tts_router.post("/get-visemes")
+async def get_visemes(request: Request):
+    data = await request.json()
+    text = data.get("text")
+    if not text:
+        raise HTTPException(status_code=400, detail="Text input is required")
+    
+    try:
+        polly_client = boto3.client("polly", region_name="us-east-1")
+        response = polly_client.synthesize_speech(
+            Text=text,
+            OutputFormat="json",
+            VoiceId="Joanna",
+            SpeechMarkTypes=["viseme"]
+        )
+
+        if "AudioStream" in response:
+            viseme_data = response["AudioStream"].read().decode("utf-8")
+            return JSONResponse(content={"visemes":viseme_data})
+        else:
+            raise HTTPException(status_code=500, detail="Audio stream not found")
+    except (BotoCoreError, ClientError) as error:
+        raise HTTPException(status_code=500, detail=str(error))
