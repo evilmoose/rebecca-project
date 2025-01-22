@@ -1,18 +1,20 @@
-// eslint-disable-next-line no-unused-vars
-import React, { useState, useEffect } from 'react';
+
 import ReactMarkdown from 'react-markdown';
 import { useDispatch, useSelector } from 'react-redux';
-import { addMessage, updateLastMessage, setStreaming } from '../store/chatSlice';
+import { addMessage, updateLastMessage, setStreaming, setUserInput} from '../store/slices/chatSlice';
+import { setVisemes, setIsTalking } from '../store/slices/pixijsSlice';
 
 const ChatContainer = () => {
-  const [userInput, setUserInput] = useState('');
+
+  //const [userInput, setUserInput] = useState('');
   const dispatch = useDispatch();
-  const { messages, isStreaming } = useSelector((state) => state.chat);
+  const { userInput, messages, isStreaming } = useSelector((state) => state.chat);
   const { username, token } = useSelector((state) => state.user);;
 
   const handleSendMessage = async () => {
     const userMessage = { role: 'user', content: userInput, name: username };
     dispatch(addMessage(userMessage));
+    dispatch(setUserInput(''));
     
     if (messages.length === 0 || messages[messages.length - 1].role !== "assistant") {
       dispatch(addMessage({ role: "assistant", content: "", name: "Rebecca" }));
@@ -46,7 +48,23 @@ const ChatContainer = () => {
       botResponse += chunk;
       dispatch(updateLastMessage(botResponse));
     } 
+    
+    // Fetch visemes data for lip sync
+    const visemesResponse = await fetch("http://127.0.0.1:5000/api/tts/get-visemes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: botResponse }),
+    });
 
+    if (!visemesResponse.ok) {
+      throw new Error(`Failed to fetch visemes: ${visemesResponse.status}`);
+    }
+
+    const visemesData = await visemesResponse.json();
+    console.log(visemesData.visemes);
+    dispatch(setVisemes(visemesData.visemes)); // Pass visemes data to PixijsCOntainer
+    dispatch(setIsTalking(true)); // Notify PixijsContainer to start the talking animation
+    
     //Send the bot's response for TTS and play audio
     fetch("http://127.0.0.1:5000/api/tts/text-to-speech", {
       method: "POST",
@@ -70,6 +88,10 @@ const ChatContainer = () => {
     setUserInput('');
   };
 
+  const handleInputChange = (e) => {
+    dispatch(setUserInput(e.target.value));
+  };
+
   return (
     <div id="chat-container" className="d-flex flex-column border bg-white p-3">
       <div id="chat-display" className="flex-grow-1 overflow-auto mb-2">
@@ -91,7 +113,7 @@ const ChatContainer = () => {
           type="text"
           className="form-control"
           value={userInput}
-          onChange={(e) => setUserInput(e.target.value)}
+          onChange={handleInputChange}
           placeholder="Type your message..."
           aria-label="Message input"
         />

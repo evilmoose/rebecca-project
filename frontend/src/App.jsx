@@ -3,7 +3,6 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Register from './pages/Register';
 import Login from './pages/Login';
-import Chat from './pages/Chat';
 import Home from './pages/Home';
 import './App.css';
 import './bootstrap.css';
@@ -21,8 +20,8 @@ const App = () => {
       <Route path="/register" element={<Register />} />
       <Route path="/login" element={<Login />} />
       <Route
-        path="/chat"
-        element={isAuthenticated ? <Chat /> : <Navigate to="/login" />}
+        path="/home"
+        element={isAuthenticated ? <Home /> : <Navigate to="/login" />}
       />
       </Routes>
     </Router>

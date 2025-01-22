@@ -1,8 +1,19 @@
 import { useState, useEffect, useRef } from "react";
+import { useSelector, useDispatch } from 'react-redux';
+import { setIsTalking, setVisemesIndex, setVisemesStartTime } from '../store/slices/pixijsSlice';
 import { Application, Assets, Sprite} from "pixi.js";
-import rebecca_textures from "../assets/rebecca_textures";
+import rebecca_idle_textures from "../assets/rebecca_idle_textures";
+import rebecca_talking_textures from "../assets/rebecca_talking_textures";
 
 const PixijsContainer = () => {
+    // Redux state selectors
+    const dispatch = useDispatch();
+    const { 
+        isTalking: isTalkingRef, 
+        visemes,
+        visemesIndex: visemeIndexRef, 
+        visemesStartTime: visemeStartTimeRef } = useSelector((state) => state.pixijs);
+    // Refs to store state values    
     const containerRef = useRef(null);
     const appRef = useRef(null); // Ref to store the app instance
     const [baseDimensions] = useState({ width: 648, height: 900}); // Base dimensions for scaling
@@ -10,7 +21,8 @@ const PixijsContainer = () => {
     useEffect(() => {
 
         // Array to store loaded textures
-        let textures = [];
+        let idleTextures = [];
+        let talkingTextures = [];
 
         // Sprite reference for resizing and scaling
         let rebecca;
@@ -21,6 +33,7 @@ const PixijsContainer = () => {
         let isBlinking = false; // State to track blinking
 
         if (!appRef.current) {
+            console.log("Creating PixiJS Application...");
             // Create a new PixiJS Application
             const app = new Application();
             
@@ -30,21 +43,30 @@ const PixijsContainer = () => {
                     resizeTo: containerRef.current,
                     background: "#ffffff",
                 });
-
+                
+                console.log("PixiJS Application initialized.");
                 // Store app in ref for later cleanup
                 appRef.current = app;
 
                 // Append the canvas to the container
                 if (containerRef.current) {
+                    console.log("Appending canvas to container...");
+                    console.log(containerRef.current)
                     containerRef.current.appendChild(app.canvas);
                 }
 
                 // Load assets and map them into an array of textures
-                const loadedAssets = await Assets.load(rebecca_textures);
-                textures = rebecca_textures.map((path) => loadedAssets[path]);
+                const loadedIdleAssets = await Assets.load(rebecca_idle_textures);
+                idleTextures = rebecca_idle_textures.map((path) => loadedIdleAssets[path]);
+
+                // Load talking textures
+                const loadedTalkingAssets = await Assets.load(Object.values(rebecca_talking_textures));
+                Object.keys(rebecca_talking_textures).forEach((key) => {
+                    talkingTextures[key] = loadedTalkingAssets[rebecca_talking_textures[key]];
+                });
 
                 // Create a sprite and set the first texture
-                rebecca = new Sprite(textures[currentFrameIndex]);           
+                rebecca = new Sprite(idleTextures[currentFrameIndex]);           
 
                 // Center the sprite's anchor point
                 rebecca.anchor.set(0.5);
@@ -56,29 +78,71 @@ const PixijsContainer = () => {
                 let frameInterval = 1000 / desiredFPS; // Time in ms between frames
 
                 app.ticker.add((/*delta*/) => {
+                    console.log("Animation ticker running...");
                     // Accumulate elapsed time in milliseconds
                     elapsed += app.ticker.elapsedMS;
 
-                    // Check if enough time has passed to update the frame
-                    if (elapsed >= frameInterval) {
-                        elapsed = 0; // Reset the elapsed time
-                        if (isBlinking) {
-                            // Handle blinking frames
-                            blinkFrameIndex++;
-                            if (blinkFrameIndex >= 3) {
-                                isBlinking = false;
-                                blinkFrameIndex = 0;
-                                currentFrameIndex = (currentFrameIndex + 3) % textures.length;
+                    if (isTalkingRef && visemes && visemes.length > 0) {
+                        // Handle talking animation
+                        console.log("Talking animation active...");
+                        const currentTime = performance.now(); - visemeStartTimeRef.current;
+
+                        if (visemeIndexRef.current < visemes.length) {
+                            const viseme = visemes[visemeIndexRef.current];
+
+                            // Check if it's time to switch to the next viseme
+                            if (currentTime >= visemes.time) {
+                                console.log(`Switching to viseme: ${viseme.value}`);
+                                if (rebecca.texture !== talkingTextures[viseme.value]) {
+                                    // Safely unload the current texture (if applicable)
+                                    console.log(`Unloading current texture: ${rebecca.texture}`);
+                                    Assets.unload(rebecca.texture);
+                    
+                                    // Assign new texture
+                                    console.log(`Assigning new texture: ${talkingTextures[viseme.value]}`);
+                                    rebecca.texture = talkingTextures[viseme.value] || talkingTextures["sil"];
+                                }
+                                dispatch(setVisemesIndex(visemeIndexRef.current + 1));
                             }
-                            rebecca.texture = textures[currentFrameIndex + blinkFrameIndex];
                         } else {
-                            // Handle idle animation
-                            currentFrameIndex = (currentFrameIndex + 3) % textures.length;
-                            rebecca.texture = textures[currentFrameIndex];
-                            // Randomly trigger blinking
-                            if (Math.random() < 0.02) { // 2% chance per frame
-                                isBlinking = true;
-                                blinkFrameIndex = 0;
+                            // Talking animation is done
+                            console.log("Talking animation completed. Resetting to idle frame.");
+                            dispatch(setIsTalking(false));
+                            dispatch(setVisemesIndex(0));
+                            dispatch(setVisemesStartTime(0));
+                            // Safely reset to idle texture
+                            if (rebecca.texture !== idleTextures[currentFrameIndex]) {
+                                console.log(`Unloading talking texture: ${rebecca.texture}`);
+                                Assets.unload(rebecca.texture); // Unload the talking texture
+
+                                console.log(`Assigning idle texture: ${idleTextures[currentFrameIndex]}`);
+                                rebecca.texture = idleTextures[currentFrameIndex]; // Assign idle frame
+                            }
+                        }
+                    } else {
+                        // Check if enough time has passed to update the frame
+                        if (elapsed >= frameInterval) {
+                            elapsed = 0; // Reset the elapsed time
+
+                            if (isBlinking) {
+                                console.log("Blinking animation started...")
+                                // Handle blinking frames
+                                blinkFrameIndex++;
+                                if (blinkFrameIndex >= 3) {
+                                    isBlinking = false;
+                                    blinkFrameIndex = 0;
+                                    currentFrameIndex = (currentFrameIndex + 3) % idleTextures.length;
+                                }
+                                rebecca.texture = idleTextures[currentFrameIndex + blinkFrameIndex];
+                            } else {
+                                console.log("Idle animation started...")
+                                // Handle idle animation
+                                currentFrameIndex = (currentFrameIndex + 3) % idleTextures.length;
+                                rebecca.texture = idleTextures[currentFrameIndex];
+                                // Randomly trigger blinking
+                                if (Math.random() < 0.02) { // 2% chance per frame
+                                    isBlinking = true;
+                                }
                             }
                         }
                     }
@@ -132,16 +196,26 @@ const PixijsContainer = () => {
         }
         // Cleanup to prevent memory leaks
         return () => {
+            console.log("Cleaning up PixiJS container...");
+            // Unload textures before destroying the application
+            if (idleTextures.length > 0) {
+                console.log("Unloading idle textures...");
+                Assets.unload(rebecca_idle_textures); // Properly unload idle textures
+            }
+
+            if (Object.keys(rebecca_talking_textures).length > 0) {
+                console.log("Unloading talking textures...");
+                Assets.unload(Object.values(rebecca_talking_textures)); // Unload talking textures
+            }
+
             if (appRef.current) {
+                console.log("Destroying PixiJS Application...");
                 appRef.current.destroy(true, true);
                 appRef.current = null;
             }
-
-            if (textures.length > 0) {
-                Assets.unload(rebecca_textures); // Unload the textures
-            }
+            console.log("Cleanup complete.");
         };
-},[baseDimensions]);
+},[baseDimensions, dispatch, isTalkingRef, visemes, visemeIndexRef, visemeStartTimeRef]);
 
     return (
         <div

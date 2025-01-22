@@ -5,6 +5,7 @@ const chatSlice = createSlice({
   initialState: { 
     messages: [],
     isStreaming: false, 
+    userInput: '',
   },
     
   reducers: {
@@ -26,12 +27,15 @@ const chatSlice = createSlice({
               name: "Rebecca",
           });
       }
-  },
+    },
     setStreaming: (state, action) => {
       state.isStreaming = action.payload;
-    }
+    },
+    setUserInput: (state, action) => {
+      state.userInput = action.payload;
+    },
   },
 });
 
-export const { addMessage, updateLastMessage, setStreaming } = chatSlice.actions;
+export const { addMessage, updateLastMessage, setStreaming, setUserInput } = chatSlice.actions;
 export default chatSlice.reducer;

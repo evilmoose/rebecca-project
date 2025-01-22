@@ -4,6 +4,7 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from starlette.responses import StreamingResponse
 from contextlib import closing
+import json
 
 tts_router = APIRouter()
 
@@ -89,7 +90,10 @@ async def get_visemes(request: Request):
 
         if "AudioStream" in response:
             viseme_data = response["AudioStream"].read().decode("utf-8")
-            return JSONResponse(content={"visemes":viseme_data})
+            # Convert newline-separated JSON objects into a list
+            viseme_list = [json.loads(line) for line in viseme_data.strip().split("\n")]
+            print(viseme_list)
+            return JSONResponse(content={"visemes":viseme_list})
         else:
             raise HTTPException(status_code=500, detail="Audio stream not found")
     except (BotoCoreError, ClientError) as error:
